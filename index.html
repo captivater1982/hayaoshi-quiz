@@ -75,9 +75,11 @@ details summary{cursor:pointer;font-weight:700;margin:6px 0}
 .next:disabled{opacity:.4;cursor:default}
 
 .lobby{display:grid;grid-template-columns:auto 1fr;gap:4vw;align-items:center;flex:1}
-.qrbox{background:#fff;padding:18px;border-radius:20px;text-align:center;color:#111}
-.qrbox img,.qrbox canvas{display:block;width:min(46vh,32vw)!important;height:auto!important}
-.qrbox .code{font-weight:900;font-size:clamp(14px,1.4vw,22px);margin-top:8px;letter-spacing:.05em}
+.qrbox{--qs:min(44vh,30vw);background:#fff;padding:calc(var(--qs)*.12) calc(var(--qs)*.12) 14px;border-radius:20px;text-align:center;color:#111}
+.qrbox.lg{--qs:min(62vh,50vw)}
+.qrbox img,.qrbox canvas{display:block;width:var(--qs)!important;height:auto!important;image-rendering:pixelated;image-rendering:crisp-edges}
+.qrbox .code{font-weight:900;font-size:clamp(14px,1.4vw,22px);margin-top:calc(var(--qs)*.08);letter-spacing:.05em}
+.qrbox .url{font-size:clamp(11px,1vw,16px);color:#444;word-break:break-all;max-width:var(--qs);margin:4px auto 0}
 .lobby h1{font-size:clamp(28px,4.6vw,84px);margin:0 0 1vh;color:var(--gold);line-height:1.2}
 .lobby .lead{font-size:clamp(16px,2vw,34px);margin:0 0 2vh}
 .lobby .cnt{font-size:clamp(18px,2.4vw,40px);font-weight:800;margin:2vh 0 1vh}
@@ -835,7 +837,7 @@ function drawQR(el, size) {
 function viewLobby() {
   const g = H.game, url = joinURL();
   return `<div class="lobby">
-    <div class="qrbox"><div id="qr"></div><div class="code">ルーム番号 ${esc(g.room)}</div></div>
+    <div class="qrbox"><div id="qr"></div><div class="code">ルーム番号 ${esc(g.room)}</div><div class="url">${esc(url.replace(/^https:\/\//, ''))}</div></div>
     <div>
       ${location.protocol === 'file:' ? `<div class="warn">⚠ いまはPC内のファイルとして開いているため、スマホからは参加できません。このファイルをネット上（GitHub Pages など）に置いて、そのURLで開いてください。このPCの別タブでの動作確認はできます。</div>` : ''}
       <h1>${esc(g.quiz.title)}</h1>
@@ -920,7 +922,7 @@ function confettiHTML() {
 function showQRModal() {
   const m = document.createElement('div');
   m.style.cssText = 'position:fixed;inset:0;background:#000c;display:grid;place-items:center;z-index:50;cursor:pointer';
-  m.innerHTML = `<div class="qrbox"><div id="qr2"></div><div class="code">ルーム番号 ${esc(H.game.room)}（クリックで閉じる）</div></div>`;
+  m.innerHTML = `<div class="qrbox lg"><div id="qr2"></div><div class="code">ルーム番号 ${esc(H.game.room)}（クリックで閉じる）</div><div class="url">${esc(joinURL().replace(/^https:\/\//, ''))}</div></div>`;
   m.onclick = () => m.remove(); document.body.appendChild(m);
   drawQR(document.getElementById('qr2'), Math.min(innerHeight * .6, innerWidth * .5));
 }
