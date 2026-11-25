@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>みんなで早押しクイズ</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--bg:#0b1026;--panel:#1a2250;--panel2:#121940;--line:#2e3a78;--text:#f3f5ff;--muted:#a7b0d8;--gold:#ffcf3f;--accent:#4f7cff;--ok:#2fd27a;--ng:#ff5a6a}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:radial-gradient(ellipse at top,#1d2a6b 0%,var(--bg) 65%) fixed var(--bg);color:var(--text);font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font:inherit;cursor:pointer;color:inherit}
+input,textarea,select{font:inherit;color:var(--text)}
+.muted{color:var(--muted)}
+.btn{background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:10px;padding:9px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:rgba(255,255,255,.14)}
+.btn.primary{background:var(--gold);color:#241a00;border-color:transparent}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{padding:6px 12px;font-size:14px}
+.btn.big{padding:14px 30px;font-size:20px}
+.btn.wide{width:100%;justify-content:center;padding:14px}
+.ic{background:transparent;border:1px solid var(--line);border-radius:8px;width:34px;height:34px;flex:none}
+.ic:hover{background:rgba(255,255,255,.1)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#000c;border:1px solid var(--line);padding:12px 20px;border-radius:12px;z-index:99;font-weight:700;max-width:90vw;text-align:center}
+
+/* ---------- editor ---------- */
+.wrap{max-width:880px;margin:0 auto;padding:20px 16px 130px}
+.ed-head h1{font-size:26px;margin:8px 0 4px;color:var(--gold)}
+.ed-head h1 small{font-size:14px;color:var(--muted);font-weight:400;margin-left:8px}
+.ed-head p{margin:0;color:var(--muted);font-size:14px}
+h2{font-size:18px;margin:4px 0 12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}
+.card.resume{border-color:var(--gold)}
+.fld{display:block;margin-bottom:10px}
+.fld>span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+.fld em{display:block;font-style:normal;font-size:12px;color:var(--muted);margin-top:4px}
+.wrap input:not([type=radio]):not([type=checkbox]),.wrap textarea,.wrap select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.wrap textarea{resize:vertical}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:600px){.grid2{grid-template-columns:1fr}}
+.q-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.qnum{color:var(--gold);font-size:17px}
+.q-head .sp{flex:1}
+.time{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:4px;margin-right:6px}
+.wrap .time input{width:64px!important;padding:5px 8px!important}
+.choices-ed{display:grid;gap:8px;margin:10px 0}
+.ch-ed{display:flex;align-items:center;gap:8px}
+.ch-ed .mark{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#fff}
+.cor{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);white-space:nowrap;cursor:pointer}
+.cor input{accent-color:var(--gold);width:18px;height:18px}
+.thumb{height:64px;border-radius:8px}
+.img-row{margin-top:8px}
+pre.prompt{white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13px;line-height:1.6;margin:8px 0}
+details summary{cursor:pointer;font-weight:700;margin:6px 0}
+.startbar{position:fixed;left:0;right:0;bottom:0;background:rgba(8,12,32,.92);border-top:1px solid var(--line);padding:12px 16px;display:flex;justify-content:center;align-items:center;gap:16px;backdrop-filter:blur(6px)}
+
+/* ---------- host stage ---------- */
+.stage{height:100vh;height:100dvh;display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(0,0,0,.28);font-size:clamp(13px,1.3vw,22px)}
+.brand{font-weight:800;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qno{font-weight:900;font-size:1.35em;white-space:nowrap}
+.qno small{font-size:.65em;color:var(--muted)}
+.topbar .sp{flex:1}
+.pill{background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.85em;white-space:nowrap}
+.pill.on{border-color:var(--ok);color:var(--ok)}
+.pill.off{border-color:var(--ng);color:var(--ng)}
+.main{overflow:auto;padding:2.2vh 3vw;display:flex;flex-direction:column;min-height:0}
+.ctrl{display:flex;gap:10px;align-items:center;padding:10px 16px;background:rgba(0,0,0,.4)}
+.ctrl .hint{color:var(--muted);font-size:13px}
+.next{margin-left:auto;background:var(--gold);color:#241a00;border:0;border-radius:12px;padding:12px 30px;font-weight:900;font-size:clamp(16px,1.4vw,22px);box-shadow:0 4px 0 #a07c00}
+.next:active{transform:translateY(3px);box-shadow:0 1px 0 #a07c00}
+.next:disabled{opacity:.4;cursor:default}
+
+.lobby{display:grid;grid-template-columns:auto 1fr;gap:4vw;align-items:center;flex:1}
+.qrbox{background:#fff;padding:18px;border-radius:20px;text-align:center;color:#111}
+.qrbox img,.qrbox canvas{display:block;width:min(46vh,32vw)!important;height:auto!important}
+.qrbox .code{font-weight:900;font-size:clamp(14px,1.4vw,22px);margin-top:8px;letter-spacing:.05em}
+.lobby h1{font-size:clamp(28px,4.6vw,84px);margin:0 0 1vh;color:var(--gold);line-height:1.2}
+.lobby .lead{font-size:clamp(16px,2vw,34px);margin:0 0 2vh}
+.lobby .cnt{font-size:clamp(18px,2.4vw,40px);font-weight:800;margin:2vh 0 1vh}
+.lobby .cnt b{color:var(--gold);font-size:1.6em}
+.chips{display:flex;flex-wrap:wrap;gap:8px;max-height:30vh;overflow:auto}
+.chip{background:rgba(255,255,255,.1);padding:6px 14px;border-radius:999px;font-size:clamp(14px,1.4vw,22px);animation:pop .35s}
+.warn{background:#5a2a00;border:1px solid #ff9a3d;border-radius:12px;padding:10px 14px;font-size:14px;margin-bottom:12px}
+.tools{margin-top:2vh;display:flex;gap:8px;flex-wrap:wrap}
+.tools a{color:var(--muted)}
+
+.qwrap{display:flex;flex-direction:column;gap:2vh;flex:1;min-height:0}
+.qhead{display:flex;gap:2vw;align-items:center}
+.qtext{flex:1;font-size:clamp(22px,3.5vw,64px);font-weight:900;line-height:1.3;background:rgba(255,255,255,.06);border:2px solid var(--line);border-radius:20px;padding:2vh 2vw;animation:slidein .5s}
+.cd{flex:none;width:clamp(80px,9vw,170px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;font-size:clamp(36px,5vw,96px);font-weight:900;background:var(--accent);box-shadow:0 0 0 8px rgba(79,124,255,.28)}
+.cd.urgent{background:var(--ng);box-shadow:0 0 0 8px rgba(255,90,106,.3);animation:pulse .5s infinite alternate}
+.stamp{flex:none;font-size:clamp(28px,4vw,72px);font-weight:900;color:#fff;background:var(--ng);padding:1vh 2vw;border-radius:16px;transform:rotate(-6deg);animation:pop .4s}
+.bar{height:12px;background:rgba(255,255,255,.1);border-radius:9px;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#ff8a3d);width:100%}
+.qbody{display:flex;gap:2vw;flex:1;min-height:0}
+.qimg{max-width:40%;max-height:100%;object-fit:contain;border-radius:16px;align-self:center}
+.tiles{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:1.8vh 1.4vw;align-content:stretch}
+.tiles.n3{grid-template-columns:1fr}
+.tile{position:relative;overflow:hidden;display:flex;align-items:center;gap:1.2vw;background:var(--c);border-radius:18px;padding:1.6vh 1.6vw;font-size:clamp(18px,2.6vw,48px);font-weight:900;min-height:9vh;box-shadow:0 6px 0 rgba(0,0,0,.28);transition:filter .5s,transform .5s,background .5s;animation:pop .4s backwards}
+.tile:nth-child(2){animation-delay:.08s}.tile:nth-child(3){animation-delay:.16s}.tile:nth-child(4){animation-delay:.24s}.tile:nth-child(5){animation-delay:.32s}.tile:nth-child(6){animation-delay:.4s}
+.mk{flex:none;width:1.6em;height:1.6em;border-radius:50%;background:rgba(255,255,255,.95);color:#222;display:grid;place-items:center;font-weight:900;position:relative;z-index:1}
+.tile .tx{flex:1;text-shadow:0 2px 4px rgba(0,0,0,.35);position:relative;z-index:1;line-height:1.25}
+.votes{position:relative;z-index:1;font-size:.7em;background:rgba(0,0,0,.4);padding:.15em .6em;border-radius:12px;white-space:nowrap;animation:pop .5s}
+.votes b{font-size:1.5em}
+.vbar{position:absolute;left:0;bottom:0;height:10px;background:rgba(255,255,255,.85);animation:grow 1s cubic-bezier(.2,.8,.2,1)}
+.tile.dim{filter:grayscale(.9) brightness(.4)}
+.tile.correct{background:linear-gradient(135deg,#fff0a8,#ffc400 55%,#ff9d00);color:#2a1c00;transform:scale(1.03);animation:glow .9s infinite alternate}
+.tile.correct .tx{text-shadow:none}
+.tile.correct .votes{background:rgba(0,0,0,.6);color:#fff}
+.pickable{cursor:pointer;outline:3px dashed rgba(255,255,255,.6);outline-offset:-6px}
+.picked{outline:6px solid #fff;outline-offset:-8px}
+.pickhint{background:#3b2a00;border:1px solid var(--gold);color:var(--gold);border-radius:12px;padding:1vh 1.5vw;font-weight:800;font-size:clamp(14px,1.6vw,26px)}
+.anscount{text-align:right;color:var(--muted);font-size:clamp(14px,1.6vw,28px)}
+.anscount b{color:var(--text);font-size:1.3em}
+
+.qrank{display:grid;grid-template-columns:1.3fr 1fr;gap:3vw;flex:1;min-height:0}
+.panel{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:20px;padding:2vh 2vw;overflow:auto}
+.panel h3{margin:0 0 1.5vh;font-size:clamp(18px,2.2vw,38px);color:var(--gold)}
+.panel .sub{color:var(--muted);font-size:clamp(14px,1.4vw,24px);margin-bottom:1vh}
+.rl{list-style:none;margin:0;padding:0;display:grid;gap:1vh}
+.rl li{display:flex;align-items:center;gap:1vw;background:rgba(255,255,255,.07);border-radius:12px;padding:1vh 1.2vw;font-size:clamp(16px,2vw,34px);font-weight:800;animation:slidein .4s backwards}
+.rl li .no{width:2.2em;text-align:center;color:var(--gold)}
+.rl li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rl li .v{color:var(--muted);font-size:.8em;white-space:nowrap}
+.rl li.r1{background:linear-gradient(90deg,#ffcf3f55,transparent)}
+.empty{color:var(--muted);font-size:clamp(16px,2vw,32px);text-align:center;padding:4vh 0}
+
+.final{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3vh;min-height:0}
+.ft{font-size:clamp(28px,4.4vw,80px);margin:0;color:var(--gold)}
+.lowlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,40vw),1fr));gap:1vh 1.5vw;width:100%;max-height:52vh;overflow:auto}
+.lowlist .lr{display:flex;gap:1vw;background:rgba(255,255,255,.07);border-radius:10px;padding:.8vh 1vw;font-size:clamp(14px,1.6vw,26px);animation:pop .4s backwards}
+.lowlist .lr b{color:var(--gold);width:3em}
+.lowlist .lr span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bigmsg{font-size:clamp(22px,3vw,54px);font-weight:900}
+.spot{text-align:center;padding:4vh 6vw;border-radius:28px;background:rgba(255,255,255,.07);border:3px solid var(--line);animation:zoom .7s cubic-bezier(.2,1.4,.4,1)}
+.spot .rk{font-size:clamp(36px,6vw,110px);font-weight:900;color:var(--gold)}
+.spot .nm{font-size:clamp(44px,8vw,150px);font-weight:900;line-height:1.15;word-break:break-all}
+.spot .sc{font-size:clamp(16px,2vw,36px);color:var(--muted);margin-top:1vh}
+.spot.top1{border-color:var(--gold);background:linear-gradient(160deg,#ffcf3f33,#ff8a3d22);box-shadow:0 0 80px #ffcf3f66}
+.spot.top2{border-color:#cfd8ff}.spot.top3{border-color:#e0a070}
+.revealed{display:flex;flex-wrap:wrap;gap:1vw;justify-content:center}
+.revealed .rv{background:rgba(255,255,255,.07);border-radius:12px;padding:.8vh 1.4vw;font-size:clamp(14px,1.6vw,28px);font-weight:800}
+.revealed .rv b{color:var(--gold);margin-right:.5em}
+.confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:5}
+.confetti i{position:absolute;top:-20px;width:10px;height:16px;animation:fall linear infinite}
+
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes zoom{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes slidein{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+@keyframes pulse{to{transform:scale(1.08)}}
+@keyframes glow{from{box-shadow:0 0 0 4px #fff8,0 0 20px #ffcf3f}to{box-shadow:0 0 0 8px #fff,0 0 60px #ffcf3f}}
+@keyframes grow{from{width:0!important}}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+
+/* ---------- guest ---------- */
+.guest{max-width:540px;margin:0 auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:12px 16px calc(16px + env(safe-area-inset-bottom))}
+.ghead{display:flex;justify-content:space-between;gap:8px;font-size:14px;color:var(--muted);padding:4px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.ghead b{color:var(--gold)}
+.gbanner{background:#5a2a00;border:1px solid #ff9a3d;border-radius:10px;padding:8px 12px;font-size:14px;margin-bottom:10px}
+.gq{font-size:19px;font-weight:800;line-height:1.45;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+.gcd{text-align:center;color:var(--muted);margin-bottom:10px}
+.gcd span{font-size:30px;font-weight:900;color:var(--text)}
+.gcd.urgent span{color:var(--ng)}
+.gbtns{display:grid;gap:12px;flex:1;align-content:start}
+.gbtn{background:var(--c);border:0;border-radius:16px;color:#fff;font-size:19px;font-weight:800;display:flex;align-items:center;gap:12px;padding:16px;min-height:74px;text-align:left;box-shadow:0 5px 0 rgba(0,0,0,.3)}
+.gbtn:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+.gbtn .mk{color:#222}
+.gcenter{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:20px 0}
+.gcenter p{margin:4px 0;color:var(--muted)}
+.gcenter .big{font-size:24px;font-weight:900}
+.gcenter .nm{font-size:30px;font-weight:900;color:var(--gold)}
+.sent{width:96px;height:96px;border-radius:24px;background:var(--c);display:grid;place-items:center;font-size:48px;font-weight:900;animation:pop .3s}
+.res{font-size:84px;font-weight:900;line-height:1;animation:zoom .5s}
+.res.ok{color:var(--ok)}.res.ng{color:var(--ng)}
+.myrank{font-size:44px;font-weight:900;color:var(--gold);animation:zoom .6s}
+.gform{flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px}
+.gform h1{font-size:24px;margin:0;color:var(--gold);text-align:center}
+.gform input{width:100%;font-size:20px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--panel2)}
+.gform .btn{justify-content:center;font-size:20px;padding:14px}
+.link{background:none;border:0;color:var(--muted);text-decoration:underline;font-size:14px;margin-top:10px}
+.gfoot{text-align:center;color:var(--muted);font-size:12px;padding-top:12px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+// ================= 共通 =================
+const app = document.getElementById('app');
+const params = new URLSearchParams(location.search);
+const ROOM = (params.get('room') || '').replace(/[^0-9a-z]/gi, '').slice(0, 12);
+const PREFIX = 'minna-hayaoshi-v1-';
+const COLORS = ['#e5484d', '#3e7ef0', '#22a55a', '#e0a100', '#8e4fe0', '#f06a1d'];
+const MODES = [
+  { id: 'speed', name: '早押しクイズ（正解数＋速さ）', desc: '正解した数で競います。同じ数なら、正解した問題の回答時間の合計が短い人が上位。' },
+  { id: 'split', name: 'ポイント山分け', desc: '1問1,000点を正解者で山分け。正解者が少ない難問ほど高得点になり、逆転しやすいルールです。' },
+  { id: 'survival', name: 'サバイバル', desc: '間違えるか未回答で脱落。最後まで残った人が優勝（同じなら速さ順）。' },
+];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const clampInt = (v, lo, hi, d) => { v = parseInt(v, 10); return isNaN(v) ? d : Math.min(hi, Math.max(lo, v)); };
+const safeImg = s => (typeof s === 'string' && (/^data:image\//.test(s) || /^https:\/\//.test(s))) ? s : '';
+const sec = ms => (ms / 1000).toFixed(2) + '秒';
+function toast(msg, ms = 2600) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms);
+}
+function copyText(text) {
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('コピーしました'), () => fallbackCopy(text));
+  else fallbackCopy(text);
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('コピーしました'); } catch (e) { prompt('コピーしてください', text); }
+  ta.remove();
+}
+if (typeof Peer === 'undefined') {
+  app.innerHTML = '<div class="wrap"><div class="card">通信ライブラリを読み込めませんでした。インターネット接続を確認して再読み込みしてください。</div></div>';
+  throw new Error('PeerJS not loaded');
+}
+
+// ================= 効果音（幹事画面のみ） =================
+let actx = null;
+function beep(freq, dur, type = 'sine', vol = .15, delay = 0) {
+  if (!H.sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+    o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + dur + .02);
+  } catch (e) {}
+}
+const SFX = {
+  start() { beep(660, .12, 'triangle'); beep(990, .2, 'triangle', .15, .12); },
+  tick() { beep(1200, .05, 'square', .05); },
+  end() { beep(330, .18, 'sawtooth', .12); beep(220, .4, 'sawtooth', .12, .18); },
+  votes() { for (let i = 0; i < 8; i++) beep(300 + i * 60, .06, 'square', .05, i * .05); },
+  reveal() { [523, 659, 784, 1047].forEach((f, i) => beep(f, .25, 'triangle', .16, i * .09)); },
+  fanfare() { [523, 523, 523, 698, 880, 784, 1047].forEach((f, i) => beep(f, .3, 'triangle', .16, i * .13)); },
+};
+
+// ================= 幹事（ホスト） =================
+const SAMPLE = {
+  title: '結婚式二次会 早押しクイズ', mode: 'speed', revealFrom: 5,
+  questions: [
+    { text: '（例）新郎と新婦が初めて出会った場所は？', choices: ['大学のサークル', '友人の結婚式', '職場', 'マッチングアプリ'], correct: 1, time: 20, image: '' },
+    { text: '（例）新婦が新郎に「直してほしい」ところは？', choices: ['寝相が悪い', '飲み会が多い', '服を脱ぎっぱなし', '全部'], correct: 3, time: 20, image: '' },
+    { text: '富士山の標高は？', choices: ['3,376m', '3,776m', '3,976m'], correct: 1, time: 15, image: '' },
+    { text: '（当日決める）今日いちばんオシャレだと思うテーブルは？', choices: ['Aテーブル', 'Bテーブル', 'Cテーブル', 'Dテーブル'], correct: -1, time: 20, image: '' },
+  ],
+};
+const H = { quiz: null, game: null, peer: null, conns: new Map(), view: 'edit', timer: null, sound: true, botTimers: [], net: 'connecting', saveT: null, autoCloseT: null };
+
+function normQuiz(r) {
+  r = r || {};
+  const q = { title: String(r.title || '早押しクイズ').slice(0, 40), mode: MODES.some(m => m.id === r.mode) ? r.mode : 'speed', revealFrom: clampInt(r.revealFrom, 1, 50, 5), questions: [] };
+  const list = Array.isArray(r) ? r : (Array.isArray(r.questions) ? r.questions : []);
+  for (const x of list) {
+    if (!x || typeof x !== 'object') continue;
+    const ch = (Array.isArray(x.choices) ? x.choices : []).map(c => String(c ?? '').slice(0, 60)).slice(0, 6);
+    while (ch.length < 2) ch.push('');
+    let cor = Number.isInteger(x.correct) ? x.correct : (Number.isInteger(x.answer) ? x.answer : 0);
+    if (cor >= ch.length || cor < -1) cor = 0;
+    q.questions.push({ text: String(x.text || x.question || '').slice(0, 200), choices: ch, correct: cor, time: clampInt(x.time, 5, 300, 20), image: safeImg(x.image) });
+  }
+  return q;
+}
+function saveQuiz() { if (!LS.set('mhq-quiz', H.quiz)) toast('ブラウザに保存できませんでした（画像が大きすぎる可能性）。「JSONで書き出し」で保存してください'); }
+
+function hostInit() {
+  H.quiz = normQuiz(LS.get('mhq-quiz', null) || SAMPLE);
+  renderEditor();
+  document.addEventListener('keydown', e => {
+    if (H.view !== 'game') return;
+    if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+    if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); next(); }
+    if (e.key === 'f') toggleFS();
+  });
+  window.addEventListener('beforeunload', e => { if (H.view === 'game') { e.preventDefault(); e.returnValue = ''; } });
+}
+
+// ---------- 編集画面 ----------
+function renderEditor() {
+  H.view = 'edit';
+  const q = H.quiz, saved = LS.get('mhq-game', null);
+  const mode = MODES.find(m => m.id === q.mode);
+  const y = scrollY;
+  app.innerHTML = `
+  <div class="wrap">
+    <header class="ed-head"><h1>🎉 みんなで早押しクイズ<small>幹事用 編集画面</small></h1>
+      <p>問題を作って「会場を開く」を押すと、ゲストはQRコードを読むだけで自分のスマホから参加できます。編集内容はこのブラウザに自動保存されます。</p></header>
+    ${saved && saved.phase && saved.phase !== 'lobby' ? `<div class="card resume"><b>進行中のゲームがあります</b>（${saved.phase === 'final' ? '最終結果' : '第' + (saved.qi + 1) + '問'}・参加 ${Object.keys(saved.players || {}).length}人）
+      <div class="row" style="margin-top:10px"><button class="btn primary" data-act="resume">続きから再開</button><button class="btn" data-act="discard">破棄する</button></div></div>` : ''}
+    <section class="card">
+      <h2>基本設定</h2>
+      <label class="fld"><span>クイズのタイトル</span><input data-k="title" value="${esc(q.title)}" maxlength="40"></label>
+      <div class="grid2">
+        <label class="fld"><span>ルール</span><select data-k="mode">${MODES.map(m => `<option value="${m.id}" ${q.mode === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</select><em id="modeDesc">${esc(mode.desc)}</em></label>
+        <label class="fld"><span>最終発表で1人ずつ発表する順位</span><input type="number" min="1" max="50" data-k="revealFrom" value="${q.revealFrom}"><em>例：5なら6位以下はまとめて表示、5位→1位は1人ずつ発表</em></label>
+      </div>
+    </section>
+    <section>
+      <h2 style="margin-top:20px">問題（${q.questions.length}問）</h2>
+      ${q.questions.map(qCard).join('')}
+      <button class="btn wide" data-act="addQ">＋ 問題を追加</button>
+    </section>
+    <section class="card" style="margin-top:20px">
+      <h2>保存・読み込み</h2>
+      <div class="row">
+        <button class="btn sm" data-act="export">⬇ JSONで書き出し</button>
+        <label class="btn sm">⬆ JSONファイルを読み込み<input type="file" accept=".json,application/json" hidden data-k="impfile"></label>
+        <button class="btn sm" data-act="sample">サンプルに戻す</button>
+      </div>
+      <details style="margin-top:12px"><summary>🤖 AI（Claude など）に問題を作ってもらう</summary>
+        <p class="muted" style="font-size:14px">下の文章をコピーして、〇〇の部分を書き換えてAIに送ってください。返ってきたJSONを下の欄に貼り付けて「貼り付けたJSONを読み込む」を押すと問題が入ります。</p>
+        <pre class="prompt" id="aiPrompt">〇〇（例：新郎たかし・新婦ゆみの結婚式二次会。2人は大学のテニスサークルで出会い、交際5年。新郎は大の猫好き）向けに、会場が盛り上がる4択クイズを10問作ってください。
+・1問目は全員が笑える簡単な問題、最後は新郎新婦の実演で答えが決まる問題
+・ハズレ選択肢にも笑える答えを入れる
+・次のJSON形式だけで出力。correct は正解の番号（0始まり）、会場で決める問題は -1、time は制限時間（秒）
+
+{"title":"クイズのタイトル","questions":[{"text":"問題文","choices":["選択肢1","選択肢2","選択肢3","選択肢4"],"correct":0,"time":20}]}</pre>
+        <button class="btn sm" data-act="copyPrompt">📋 この文章をコピー</button>
+        <textarea id="imp" rows="5" placeholder="ここにJSONを貼り付け" style="margin-top:12px"></textarea>
+        <div class="row" style="margin-top:8px"><button class="btn sm" data-act="importText">貼り付けたJSONを読み込む（今の問題と置き換え）</button><button class="btn sm" data-act="appendText">今の問題の後ろに追加</button></div>
+      </details>
+    </section>
+    <div class="startbar"><span class="muted">${q.questions.length}問 ・ ${esc(mode.name)}</span><button class="btn primary big" data-act="start">▶ 会場を開く</button></div>
+  </div>`;
+  scrollTo(0, y);
+}
+function qCard(q, i) {
+  const img = safeImg(q.image);
+  return `<div class="card">
+    <div class="q-head"><b class="qnum">第${i + 1}問</b><span class="sp"></span>
+      <label class="time">制限時間<input type="number" min="5" max="300" data-qi="${i}" data-k="time" value="${q.time}">秒</label>
+      <button class="ic" data-act="upQ" data-qi="${i}" title="上へ">↑</button>
+      <button class="ic" data-act="downQ" data-qi="${i}" title="下へ">↓</button>
+      <button class="ic" data-act="dupQ" data-qi="${i}" title="複製">⧉</button>
+      <button class="ic" data-act="delQ" data-qi="${i}" title="削除">🗑</button>
+    </div>
+    <textarea data-qi="${i}" data-k="text" rows="2" maxlength="200" placeholder="問題文">${esc(q.text)}</textarea>
+    <div class="choices-ed">
+      ${q.choices.map((c, ci) => `<div class="ch-ed"><span class="mark" style="background:${COLORS[ci]}">${ci + 1}</span>
+        <input data-qi="${i}" data-ci="${ci}" data-k="choice" value="${esc(c)}" maxlength="60" placeholder="選択肢${ci + 1}">
+        <label class="cor"><input type="radio" name="cor${i}" data-qi="${i}" data-k="correct" value="${ci}" ${q.correct === ci ? 'checked' : ''}>正解</label>
+        ${q.choices.length > 2 ? `<button class="ic" data-act="delC" data-qi="${i}" data-ci="${ci}" title="選択肢を削除">✕</button>` : ''}</div>`).join('')}
+    </div>
+    <div class="row">
+      ${q.choices.length < 6 ? `<button class="btn sm" data-act="addC" data-qi="${i}">＋ 選択肢</button>` : ''}
+      <label class="cor"><input type="radio" name="cor${i}" data-qi="${i}" data-k="correct" value="-1" ${q.correct === -1 ? 'checked' : ''}>正解は当日、会場で決める</label>
+    </div>
+    <div class="row img-row">
+      ${img ? `<img class="thumb" src="${esc(img)}" alt=""><button class="btn sm" data-act="clearImg" data-qi="${i}">画像を外す</button>` : ''}
+      <label class="btn sm">🖼 ${img ? '画像を変更' : '画像を付ける（任意）'}<input type="file" accept="image/*" hidden data-qi="${i}" data-k="imgfile"></label>
+    </div>
+  </div>`;
+}
+function readImage(file, cb) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      cb(cv.toDataURL('image/jpeg', .8));
+    };
+    img.onerror = () => toast('画像を読み込めませんでした');
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+function importJSON(text, append) {
+  let data;
+  try { data = JSON.parse(text.trim().replace(/^```(json)?/i, '').replace(/```$/, '')); } catch (e) { toast('JSONの形式が正しくありません'); return; }
+  const nq = normQuiz(data);
+  if (!nq.questions.length) { toast('問題が見つかりませんでした'); return; }
+  if (append) H.quiz.questions.push(...nq.questions);
+  else { if (!Array.isArray(data)) { H.quiz.title = nq.title; if (data.mode) H.quiz.mode = nq.mode; } H.quiz.questions = nq.questions; }
+  saveQuiz(); renderEditor(); toast(nq.questions.length + '問を読み込みました');
+}
+document.addEventListener('input', e => {
+  if (ROOM || H.view !== 'edit') return;
+  const t = e.target, k = t.dataset.k; if (!k) return;
+  const q = H.quiz;
+  if (t.dataset.qi == null) {
+    if (k === 'title') q.title = t.value;
+    else if (k === 'revealFrom') q.revealFrom = clampInt(t.value, 1, 50, 5);
+    else return;
+  } else {
+    const qq = q.questions[+t.dataset.qi];
+    if (k === 'text') qq.text = t.value;
+    else if (k === 'time') qq.time = clampInt(t.value, 5, 300, 20);
+    else if (k === 'choice') qq.choices[+t.dataset.ci] = t.value;
+    else return;
+  }
+  saveQuiz();
+});
+document.addEventListener('change', e => {
+  if (ROOM || H.view !== 'edit') return;
+  const t = e.target, k = t.dataset.k; if (!k) return;
+  if (k === 'mode') { H.quiz.mode = t.value; saveQuiz(); renderEditor(); }
+  else if (k === 'correct') { H.quiz.questions[+t.dataset.qi].correct = +t.value; saveQuiz(); }
+  else if (k === 'imgfile' && t.files[0]) { const qi = +t.dataset.qi; readImage(t.files[0], url => { H.quiz.questions[qi].image = url; saveQuiz(); renderEditor(); }); }
+  else if (k === 'impfile' && t.files[0]) { t.files[0].text().then(txt => importJSON(txt, false)); }
+});
+function editorAct(act, el) {
+  const q = H.quiz, qs = q.questions, i = el.dataset.qi != null ? +el.dataset.qi : null;
+  switch (act) {
+    case 'addQ': qs.push({ text: '', choices: ['', '', '', ''], correct: 0, time: 20, image: '' }); saveQuiz(); renderEditor(); scrollTo(0, document.body.scrollHeight); return;
+    case 'delQ': if (!confirm(`第${i + 1}問を削除しますか？`)) return; qs.splice(i, 1); break;
+    case 'upQ': if (i > 0) [qs[i - 1], qs[i]] = [qs[i], qs[i - 1]]; break;
+    case 'downQ': if (i < qs.length - 1) [qs[i + 1], qs[i]] = [qs[i], qs[i + 1]]; break;
+    case 'dupQ': qs.splice(i + 1, 0, structuredClone(qs[i])); break;
+    case 'addC': if (qs[i].choices.length < 6) qs[i].choices.push(''); break;
+    case 'delC': { const ci = +el.dataset.ci, qq = qs[i]; qq.choices.splice(ci, 1); if (qq.correct === ci) qq.correct = 0; else if (qq.correct > ci) qq.correct--; break; }
+    case 'clearImg': qs[i].image = ''; break;
+    case 'sample': if (!confirm('今の問題を消して、サンプルに戻しますか？')) return; H.quiz = normQuiz(SAMPLE); break;
+    case 'export': {
+      const blob = new Blob([JSON.stringify(q, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (q.title || 'quiz').replace(/[\\/:*?"<>|]/g, '_') + '.json'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
+    }
+    case 'copyPrompt': copyText(document.getElementById('aiPrompt').textContent); return;
+    case 'importText': importJSON(document.getElementById('imp').value, false); return;
+    case 'appendText': importJSON(document.getElementById('imp').value, true); return;
+    case 'discard': if (!confirm('進行中のゲームを破棄しますか？')) return; LS.del('mhq-game'); renderEditor(); return;
+    case 'resume': resumeGame(); return;
+    case 'start': startGame(); return;
+    default: return;
+  }
+  saveQuiz(); renderEditor();
+}
+
+// ---------- ゲーム進行 ----------
+const genRoom = () => String(Math.floor(100000 + Math.random() * 900000));
+const curQ = () => H.game && H.game.qi >= 0 ? H.game.quiz.questions[H.game.qi] : null;
+const joinURL = () => location.origin + location.pathname + '?room=' + H.game.room;
+
+function startGame() {
+  const bad = H.quiz.questions.findIndex(q => !q.text.trim() || q.choices.some(c => !c.trim()));
+  if (!H.quiz.questions.length) return toast('問題が1問もありません');
+  if (bad >= 0) return toast(`第${bad + 1}問に空欄があります（問題文・選択肢）`);
+  H.game = { room: genRoom(), phase: 'lobby', qi: -1, players: {}, correct: {}, revealed: [], qStart: 0, deadline: 0, finalPos: 0, quiz: structuredClone(H.quiz) };
+  H.view = 'game'; openPeer(); renderHost(); saveGame();
+}
+function resumeGame() {
+  const g = LS.get('mhq-game', null); if (!g) return renderEditor();
+  H.game = g; if (g.phase === 'q') g.phase = 'closed';
+  H.view = 'game'; openPeer(); renderHost();
+}
+function exitGame() {
+  if (!confirm('ゲームを終了して編集画面に戻りますか？\n（進行状況は消えます）')) return;
+  clearInterval(H.timer); H.botTimers.forEach(clearTimeout); H.botTimers = [];
+  try { H.peer && H.peer.destroy(); } catch (e) {}
+  H.peer = null; H.conns.clear(); H.game = null; LS.del('mhq-game');
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  renderEditor();
+}
+function saveGame() { if (H.game) LS.set('mhq-game', H.game); }
+function saveGameSoon() { clearTimeout(H.saveT); H.saveT = setTimeout(saveGame, 600); }
+function toggleFS() { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else document.documentElement.requestFullscreen?.().catch(() => {}); }
+
+function setNet(s) {
+  H.net = s;
+  const el = document.getElementById('net'); if (!el) return;
+  el.className = 'pill ' + (s === 'online' ? 'on' : 'off');
+  el.textContent = s === 'online' ? '● 接続中' : (s === 'connecting' ? '… 準備中' : '⚠ 再接続中');
+}
+function openPeer(attempt = 0) {
+  if (H.peer) { try { H.peer.destroy(); } catch (e) {} }
+  setNet('connecting');
+  const peer = new Peer(PREFIX + H.game.room, { debug: 0 });
+  H.peer = peer;
+  peer.on('open', () => { if (H.peer === peer) setNet('online'); });
+  peer.on('connection', onConn);
+  peer.on('disconnected', () => {
+    if (H.peer !== peer) return;
+    setNet('reconnecting');
+    setTimeout(() => { if (H.peer === peer && !peer.destroyed && peer.disconnected) { try { peer.reconnect(); } catch (e) {} } }, 1500);
+  });
+  peer.on('error', err => {
+    if (H.peer !== peer || !H.game) return;
+    if (err.type === 'unavailable-id') {
+      if (H.game.phase === 'lobby' && !Object.keys(H.game.players).length) { H.game.room = genRoom(); openPeer(); renderHost(); }
+      else if (attempt < 20) setTimeout(() => { if (H.peer === peer) openPeer(attempt + 1); }, 3000);
+    } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
+      setNet('reconnecting');
+      setTimeout(() => { if (H.peer === peer && H.game) openPeer(attempt + 1); }, 3000);
+    }
+  });
+}
+function onConn(conn) {
+  conn.on('data', d => onGuestMsg(conn, d));
+  conn.on('close', () => { if (conn.pid && H.conns.get(conn.pid) === conn) { H.conns.delete(conn.pid); refreshCounts(); } });
+  conn.on('error', () => {});
+}
+function onGuestMsg(conn, d) {
+  const g = H.game; if (!g || !d || typeof d !== 'object') return;
+  if (d.t === 'join') {
+    const pid = String(d.pid || '').slice(0, 40); if (!pid) return;
+    const name = String(d.name || '').replace(/\s+/g, ' ').trim().slice(0, 16) || 'ゲスト';
+    const isNew = !g.players[pid];
+    if (isNew) g.players[pid] = { name, answers: {} }; else g.players[pid].name = name;
+    conn.pid = pid;
+    const old = H.conns.get(pid); if (old && old !== conn) { try { old.close(); } catch (e) {} }
+    H.conns.set(pid, conn);
+    sendState(pid); saveGameSoon();
+    if (g.phase === 'lobby') renderLobbyChips(isNew ? pid : null); else refreshCounts();
+  } else if (d.t === 'answer') {
+    const pid = conn.pid, p = g.players[pid];
+    if (!p || g.phase !== 'q' || d.qi !== g.qi || p.answers[g.qi] || !isAlive(p)) { if (p) sendState(pid); return; }
+    const c = d.c | 0, q = curQ();
+    if (c < 0 || c >= q.choices.length) return;
+    p.answers[g.qi] = { c, ms: Math.max(0, Date.now() - g.qStart) };
+    sendState(pid); refreshCounts(); saveGameSoon(); checkAllAnswered();
+  }
+}
+
+// ---------- 集計 ----------
+function countCorrect(qi) { const g = H.game, cor = g.correct[qi]; let n = 0; for (const p of Object.values(g.players)) { const a = p.answers[qi]; if (a && a.c === cor) n++; } return n; }
+function playerStats(p, cc) {
+  const g = H.game, mode = g.quiz.mode; let score = 0, time = 0, correct = 0, alive = true;
+  for (const qi of g.revealed) {
+    const a = p.answers[qi], ok = !!a && a.c === g.correct[qi];
+    if (mode === 'survival') { if (!alive) continue; if (ok) { correct++; time += a.ms; } else alive = false; }
+    else if (ok) { correct++; time += a.ms; if (mode === 'split') score += Math.round(1000 / Math.max(1, cc ? cc[qi] : countCorrect(qi))); }
+  }
+  if (mode !== 'split') score = correct;
+  return { score, time, correct, alive };
+}
+const isAlive = p => H.game.quiz.mode !== 'survival' || playerStats(p).alive;
+function standings() {
+  const g = H.game, cc = {}; for (const qi of g.revealed) cc[qi] = countCorrect(qi);
+  const arr = Object.entries(g.players).map(([pid, p]) => ({ pid, name: p.name, ...playerStats(p, cc) }));
+  arr.sort((a, b) => b.score - a.score || a.time - b.time || a.name.localeCompare(b.name, 'ja'));
+  arr.forEach((r, i) => r.rank = i + 1);
+  return arr;
+}
+function scoreLabel(r) {
+  const m = H.game.quiz.mode;
+  if (m === 'split') return `${r.score.toLocaleString()}点（${r.correct}問正解）`;
+  if (m === 'survival') return `${r.correct}問クリア${r.alive ? '・最後まで生存' : ''}`;
+  return `${r.correct}問正解・${sec(r.time)}`;
+}
+const voteCounts = () => { const q = curQ(), c = q.choices.map(() => 0); for (const p of Object.values(H.game.players)) { const a = p.answers[H.game.qi]; if (a) c[a.c]++; } return c; };
+const answeredCount = () => Object.values(H.game.players).filter(p => p.answers[H.game.qi]).length;
+const eligibleCount = () => Object.values(H.game.players).filter(isAlive).length;
+
+// ---------- ゲストへ送信 ----------
+function stateFor(pid, st) {
+  const g = H.game, q = curQ(), p = g.players[pid];
+  const m = { t: 'state', title: g.quiz.title, phase: g.phase, qi: g.qi, total: g.quiz.questions.length, n: Object.keys(g.players).length, mode: g.quiz.mode, name: p ? p.name : '' };
+  const me = st.find(r => r.pid === pid);
+  if (me) m.me = { rank: me.rank, score: me.score, alive: me.alive, label: scoreLabel(me) };
+  if (q && ['q', 'closed', 'votes', 'answer', 'qrank'].includes(g.phase)) {
+    m.q = { text: q.text, choices: q.choices };
+    if (g.phase === 'q') m.remain = Math.max(0, g.deadline - Date.now());
+    const a = p && p.answers[g.qi];
+    m.my = { c: a ? a.c : null };
+    if (g.phase === 'answer' || g.phase === 'qrank') { m.correct = g.correct[g.qi]; m.my.ok = !!a && a.c === m.correct; }
+  }
+  if (g.phase === 'final' && me) {
+    const R = Math.min(g.quiz.revealFrom, st.length);
+    m.final = { revealed: me.rank > R || g.finalPos <= me.rank, rank: me.rank, total: st.length };
+  }
+  return m;
+}
+function sendState(pid) { const c = H.conns.get(pid); if (c && c.open) { try { c.send(stateFor(pid, standings())); } catch (e) {} } }
+function broadcast() { const st = standings(); for (const [pid, c] of H.conns) if (c.open) { try { c.send(stateFor(pid, st)); } catch (e) {} } }
+
+// ---------- 進行 ----------
+function openQuestion(i) {
+  const g = H.game, q = g.quiz.questions[i];
+  g.qi = i; g.phase = 'q'; g.qStart = Date.now(); g.deadline = g.qStart + q.time * 1000; g.correct[i] = q.correct;
+  SFX.start(); scheduleBots(); startTick();
+}
+function closeQuestion() {
+  const g = H.game; if (g.phase !== 'q') return;
+  g.phase = 'closed'; clearInterval(H.timer); clearTimeout(H.autoCloseT);
+  H.botTimers.forEach(clearTimeout); H.botTimers = []; SFX.end();
+}
+function startTick() {
+  clearInterval(H.timer); let last = null;
+  H.timer = setInterval(() => {
+    const g = H.game; if (!g || g.phase !== 'q') { clearInterval(H.timer); return; }
+    const rem = g.deadline - Date.now(), s = Math.max(0, Math.ceil(rem / 1000));
+    const el = document.getElementById('cd');
+    if (el) { el.textContent = s; el.parentElement.classList.toggle('urgent', s <= 5); }
+    const b = document.getElementById('cdbar'); if (b) b.style.width = Math.max(0, rem / (curQ().time * 1000) * 100) + '%';
+    if (s !== last) { if (s <= 5 && s > 0) SFX.tick(); last = s; }
+    if (rem <= 0) { closeQuestion(); renderHost(); broadcast(); saveGame(); }
+  }, 100);
+}
+function checkAllAnswered() {
+  const g = H.game; if (g.phase !== 'q') return;
+  const el = eligibleCount();
+  if (el > 0 && answeredCount() >= el) {
+    clearTimeout(H.autoCloseT); const qi = g.qi;
+    H.autoCloseT = setTimeout(() => { if (g.phase === 'q' && g.qi === qi) { closeQuestion(); renderHost(); broadcast(); saveGame(); } }, 900);
+  }
+}
+function next() {
+  const g = H.game; if (!g) return;
+  const qs = g.quiz.questions;
+  switch (g.phase) {
+    case 'lobby': if (!Object.keys(g.players).length && !confirm('まだ参加者がいません。始めますか？')) return; openQuestion(0); break;
+    case 'q': closeQuestion(); break;
+    case 'closed': g.phase = 'votes'; SFX.votes(); break;
+    case 'votes':
+      if (!(g.correct[g.qi] >= 0)) { toast('正解の選択肢をクリックして決めてください'); return; }
+      g.phase = 'answer'; if (!g.revealed.includes(g.qi)) g.revealed.push(g.qi); SFX.reveal(); break;
+    case 'answer': g.phase = 'qrank'; break;
+    case 'qrank':
+      if (g.qi + 1 < qs.length) openQuestion(g.qi + 1);
+      else { g.phase = 'final'; g.finalPos = Math.min(g.quiz.revealFrom, Object.keys(g.players).length) + 1; SFX.votes(); }
+      break;
+    case 'final': if (g.finalPos > 1) { g.finalPos--; g.finalPos === 1 ? SFX.fanfare() : SFX.reveal(); } else return; break;
+  }
+  renderHost(); broadcast(); saveGame();
+}
+function nextLabel() {
+  const g = H.game;
+  switch (g.phase) {
+    case 'lobby': return 'クイズを始める';
+    case 'q': return '締め切る';
+    case 'closed': return '票数を見る';
+    case 'votes': return '正解発表';
+    case 'answer': return '正解者ランキング';
+    case 'qrank': return g.qi + 1 < g.quiz.questions.length ? '次の問題へ' : '最終結果発表へ';
+    case 'final': { const R = Math.min(g.quiz.revealFrom, Object.keys(g.players).length); return g.finalPos > R ? `${R}位から発表` : (g.finalPos > 1 ? `${g.finalPos - 1}位を発表` : 'おしまい'); }
+  }
+}
+
+// ---------- テスト用ダミー ----------
+function addBots(n) {
+  const names = ['たろう', 'はなこ', 'けんじ', 'ゆき', 'そうた', 'みく', 'だいき', 'あやね', 'しょう', 'りな', 'こうへい', 'まい'];
+  for (let i = 0; i < n; i++) { const pid = 'bot-' + uid(); H.game.players[pid] = { name: '[テスト]' + names[Math.floor(Math.random() * names.length)] + (Math.floor(Math.random() * 90) + 10), answers: {}, bot: true }; }
+  renderHost(); saveGame();
+}
+function scheduleBots() {
+  const g = H.game, q = curQ(), qi = g.qi;
+  H.botTimers.forEach(clearTimeout); H.botTimers = [];
+  for (const p of Object.values(g.players)) if (p.bot) {
+    H.botTimers.push(setTimeout(() => {
+      if (g.phase !== 'q' || g.qi !== qi || p.answers[qi] || !isAlive(p)) return;
+      const n = q.choices.length, cor = q.correct >= 0 ? q.correct : Math.floor(Math.random() * n);
+      p.answers[qi] = { c: Math.random() < .6 ? cor : Math.floor(Math.random() * n), ms: Date.now() - g.qStart };
+      refreshCounts(); checkAllAnswered();
+    }, 700 + Math.random() * q.time * 650));
+  }
+}
+
+// ---------- 幹事画面の描画 ----------
+function refreshCounts() {
+  if (H.view !== 'game') return;
+  const pc = document.getElementById('pc'); if (pc) pc.textContent = Object.keys(H.game.players).length;
+  const a = document.getElementById('ans'); if (a) a.textContent = answeredCount();
+  const e = document.getElementById('elig'); if (e) e.textContent = eligibleCount();
+  if (H.game.phase === 'lobby') renderLobbyChips();
+}
+function renderLobbyChips() {
+  const box = document.getElementById('chips'); if (!box) return;
+  const ps = Object.values(H.game.players);
+  box.innerHTML = ps.map(p => `<span class="chip">${esc(p.name)}</span>`).join('');
+  const c = document.getElementById('lcnt'); if (c) c.textContent = ps.length;
+  const pc = document.getElementById('pc'); if (pc) pc.textContent = ps.length;
+}
+function renderHost() {
+  if (H.view !== 'game') return;
+  const g = H.game, total = g.quiz.questions.length;
+  const views = { lobby: viewLobby, q: viewQuestion, closed: viewQuestion, votes: viewQuestion, answer: viewQuestion, qrank: viewQRank, final: viewFinal };
+  const done = g.phase === 'final' && g.finalPos <= 1;
+  app.innerHTML = `<div class="stage">
+    <div class="topbar"><span class="brand">${esc(g.quiz.title)}</span>
+      ${g.qi >= 0 && g.phase !== 'final' ? `<span class="qno">第${g.qi + 1}問 <small>/ ${total}</small></span>` : ''}
+      <span class="sp"></span><span id="net" class="pill"></span>
+      <span class="pill">👥 <b id="pc">${Object.keys(g.players).length}</b>人</span><span class="pill">ルーム ${esc(g.room)}</span></div>
+    <div class="main">${views[g.phase]()}</div>
+    <div class="ctrl">
+      <button class="btn sm" data-act="exit">■ 終了</button>
+      <button class="btn sm" data-act="fs">⛶ 全画面</button>
+      <button class="btn sm" data-act="snd">${H.sound ? '🔊 音あり' : '🔇 音なし'}</button>
+      ${g.phase !== 'lobby' ? `<button class="btn sm" data-act="qr">QRを表示</button>` : ''}
+      <span class="hint">スペースキーでも進めます</span>
+      <button class="next" data-act="next" ${done ? 'disabled' : ''}>${nextLabel()} ▶</button>
+    </div>
+  </div>${done ? confettiHTML() : ''}`;
+  setNet(H.net);
+  if (g.phase === 'lobby') { drawQR(document.getElementById('qr'), Math.min(innerHeight * .46, innerWidth * .32)); renderLobbyChips(); }
+}
+function drawQR(el, size) {
+  if (!el || typeof QRCode === 'undefined') return;
+  el.innerHTML = '';
+  new QRCode(el, { text: joinURL(), width: Math.round(size * 2), height: Math.round(size * 2), correctLevel: QRCode.CorrectLevel.M });
+}
+function viewLobby() {
+  const g = H.game, url = joinURL();
+  return `<div class="lobby">
+    <div class="qrbox"><div id="qr"></div><div class="code">ルーム番号 ${esc(g.room)}</div></div>
+    <div>
+      ${location.protocol === 'file:' ? `<div class="warn">⚠ いまはPC内のファイルとして開いているため、スマホからは参加できません。このファイルをネット上（GitHub Pages など）に置いて、そのURLで開いてください。このPCの別タブでの動作確認はできます。</div>` : ''}
+      <h1>${esc(g.quiz.title)}</h1>
+      <p class="lead">スマホのカメラでQRコードを読み取って参加してください</p>
+      <div class="cnt">参加者 <b id="lcnt">0</b> 人</div>
+      <div class="chips" id="chips"></div>
+      <div class="tools">
+        <button class="btn sm" data-act="copyUrl">参加URLをコピー</button>
+        <a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">このPCで参加画面を開く</a>
+        <button class="btn sm" data-act="bots">テスト用ダミーを5人追加</button>
+      </div>
+    </div>
+  </div>`;
+}
+function viewQuestion() {
+  const g = H.game, q = curQ(), ph = g.phase, cor = g.correct[g.qi];
+  const counts = voteCounts(), tot = counts.reduce((a, b) => a + b, 0), mx = Math.max(1, ...counts);
+  const showVotes = ph === 'votes' || ph === 'answer', showAns = ph === 'answer', pick = ph === 'votes' && q.correct === -1;
+  const remain = Math.max(0, g.deadline - Date.now()), img = safeImg(q.image);
+  return `<div class="qwrap">
+    <div class="qhead">
+      <div class="qtext">${esc(q.text)}</div>
+      ${ph === 'q' ? `<div class="cd ${remain <= 5000 ? 'urgent' : ''}"><span id="cd">${Math.ceil(remain / 1000)}</span></div>` : ''}
+      ${ph === 'closed' ? `<div class="stamp">締め切り！</div>` : ''}
+    </div>
+    ${ph === 'q' ? `<div class="bar"><i id="cdbar" style="width:${remain / (q.time * 1000) * 100}%"></i></div>` : ''}
+    ${pick ? `<div class="pickhint">👆 会場の反応を見て、正解の選択肢をクリックしてください${cor >= 0 ? `（選択中：${cor + 1}）` : ''}</div>` : ''}
+    <div class="qbody">
+      ${img ? `<img class="qimg" src="${esc(img)}" alt="">` : ''}
+      <div class="tiles n${q.choices.length}">
+        ${q.choices.map((c, i) => `<div class="tile ${showAns ? (i === cor ? 'correct' : 'dim') : ''} ${pick ? 'pickable' : ''} ${pick && cor === i ? 'picked' : ''}" style="--c:${COLORS[i]};${showVotes || ph !== 'q' ? 'animation:none' : ''}" ${pick ? `data-act="pick" data-ci="${i}"` : ''}>
+          <span class="mk">${i + 1}</span><span class="tx">${esc(c)}</span>
+          ${showVotes ? `<span class="votes"><b>${counts[i]}</b>票</span><i class="vbar" style="width:${counts[i] / mx * 100}%"></i>` : ''}
+        </div>`).join('')}
+      </div>
+    </div>
+    <div class="anscount">回答 <b id="ans">${answeredCount()}</b> / <span id="elig">${eligibleCount()}</span>人${showVotes ? `（${tot}票）` : ''}</div>
+  </div>`;
+}
+function viewQRank() {
+  const g = H.game, cor = g.correct[g.qi], mode = g.quiz.mode;
+  const ans = Object.values(g.players).filter(p => p.answers[g.qi]);
+  const list = ans.filter(p => p.answers[g.qi].c === cor).sort((a, b) => a.answers[g.qi].ms - b.answers[g.qi].ms);
+  const st = standings(), top = st.slice(0, 5), alive = st.filter(r => r.alive).length;
+  return `<div class="qrank">
+    <div class="panel"><h3>⚡ 第${g.qi + 1}問 正解者（速い順）</h3>
+      <div class="sub">正解 ${list.length}人 / 回答 ${ans.length}人${mode === 'split' && list.length ? `　→ 1人 ${Math.round(1000 / list.length).toLocaleString()}点` : ''}</div>
+      ${list.length ? `<ol class="rl">${list.slice(0, 10).map((p, i) => `<li class="${i === 0 ? 'r1' : ''}" style="animation-delay:${(9 - Math.min(i, 9)) * .12}s"><span class="no">${i + 1}</span><span class="nm">${esc(p.name)}</span><span class="v">${sec(p.answers[g.qi].ms)}</span></li>`).join('')}</ol>` : `<div class="empty">正解者はいませんでした…！</div>`}
+    </div>
+    <div class="panel"><h3>🏆 現在の総合順位</h3>
+      ${mode === 'survival' ? `<div class="sub">生き残り ${alive}人 / ${st.length}人</div>` : ''}
+      ${top.length ? `<ol class="rl">${top.map(r => `<li class="${r.rank === 1 ? 'r1' : ''}"><span class="no">${r.rank}</span><span class="nm">${esc(r.name)}</span><span class="v">${mode === 'split' ? r.score.toLocaleString() + '点' : r.correct + '問'}</span></li>`).join('')}</ol>` : `<div class="empty">参加者がいません</div>`}
+    </div>
+  </div>`;
+}
+function viewFinal() {
+  const g = H.game, st = standings();
+  if (!st.length) return `<div class="final"><div class="bigmsg">参加者がいませんでした</div></div>`;
+  const R = Math.min(g.quiz.revealFrom, st.length), fp = g.finalPos;
+  if (fp > R) {
+    const lower = st.slice(R);
+    return `<div class="final"><h2 class="ft">🎊 最終結果発表 🎊</h2>
+      ${lower.length ? `<div class="lowlist">${lower.map((r, i) => `<div class="lr" style="animation-delay:${Math.min(i, 40) * .04}s"><b>${r.rank}位</b><span>${esc(r.name)}</span></div>`).join('')}</div>` : ''}
+      <div class="bigmsg">いよいよ、上位${R}名の発表です！</div></div>`;
+  }
+  const cur = st[fp - 1], above = st.slice(fp, R);
+  return `<div class="final">
+    <div class="spot ${fp <= 3 ? 'top' + fp : ''}"><div class="rk">${fp === 1 ? '👑 優勝' : fp + '位'}</div><div class="nm">${esc(cur.name)}</div><div class="sc">${esc(scoreLabel(cur))}</div></div>
+    ${above.length ? `<div class="revealed">${above.map(r => `<span class="rv"><b>${r.rank}位</b>${esc(r.name)}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+function confettiHTML() {
+  let s = '<div class="confetti">';
+  for (let i = 0; i < 90; i++) s += `<i style="left:${Math.random() * 100}%;background:${COLORS[i % 6]};animation-duration:${3 + Math.random() * 4}s;animation-delay:${-Math.random() * 6}s;transform:rotate(${Math.random() * 360}deg)"></i>`;
+  return s + '</div>';
+}
+function showQRModal() {
+  const m = document.createElement('div');
+  m.style.cssText = 'position:fixed;inset:0;background:#000c;display:grid;place-items:center;z-index:50;cursor:pointer';
+  m.innerHTML = `<div class="qrbox"><div id="qr2"></div><div class="code">ルーム番号 ${esc(H.game.room)}（クリックで閉じる）</div></div>`;
+  m.onclick = () => m.remove(); document.body.appendChild(m);
+  drawQR(document.getElementById('qr2'), Math.min(innerHeight * .6, innerWidth * .5));
+}
+function gameAct(act, el) {
+  switch (act) {
+    case 'next': next(); break;
+    case 'exit': exitGame(); break;
+    case 'fs': toggleFS(); break;
+    case 'snd': H.sound = !H.sound; renderHost(); break;
+    case 'qr': showQRModal(); break;
+    case 'copyUrl': copyText(joinURL()); break;
+    case 'bots': addBots(5); break;
+    case 'pick': H.game.correct[H.game.qi] = +el.dataset.ci; renderHost(); saveGame(); break;
+  }
+}
+
+// ================= ゲスト（参加者） =================
+const G = { pid: null, name: '', peer: null, conn: null, st: null, cdT: null, deadline: 0, retry: 0, rt: null, pending: null };
+function guestInit() {
+  G.pid = LS.get('mhq-pid-' + ROOM, null) || uid(); LS.set('mhq-pid-' + ROOM, G.pid);
+  G.name = LS.get('mhq-name', '');
+  if (LS.get('mhq-joined-' + ROOM, false) && G.name) connectGuest(); else renderJoin();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && G.name && LS.get('mhq-joined-' + ROOM, false) && !(G.conn && G.conn.open)) { G.retry = 0; scheduleRedial(true, 100); }
+  });
+  document.addEventListener('submit', e => {
+    e.preventDefault();
+    const v = document.getElementById('nm').value.replace(/\s+/g, ' ').trim().slice(0, 16);
+    if (!v) { toast('ニックネームを入力してください'); return; }
+    G.name = v; LS.set('mhq-name', v); LS.set('mhq-joined-' + ROOM, true);
+    if (G.conn && G.conn.open) G.conn.send({ t: 'join', pid: G.pid, name: G.name }); else connectGuest();
+  });
+}
+function renderJoin() {
+  app.innerHTML = `<div class="guest"><form class="gform">
+    <h1>🎉 クイズに参加</h1>
+    <p class="muted" style="text-align:center;margin:0">スクリーンに表示される名前です</p>
+    <input id="nm" maxlength="16" placeholder="ニックネーム" value="${esc(G.name)}" autocomplete="nickname">
+    <button class="btn primary" type="submit">参加する</button>
+    <p class="muted" style="text-align:center;font-size:13px">ルーム ${esc(ROOM)}</p>
+  </form></div>`;
+}
+function guestMsg(title, sub) {
+  app.innerHTML = `<div class="guest"><div class="gcenter"><div class="big">${esc(title)}</div>${sub ? `<p>${esc(sub)}</p>` : ''}</div></div>`;
+}
+function banner(text) { const b = document.getElementById('gbanner'); if (b) { b.textContent = text; b.hidden = !text; } else if (text && !G.st) guestMsg(text); }
+function connectGuest() {
+  if (!G.st) guestMsg('接続しています…');
+  if (G.peer && !G.peer.destroyed) { if (G.peer.open) dial(); return; }
+  const peer = new Peer({ debug: 0 }); G.peer = peer;
+  peer.on('open', () => { if (G.peer === peer) dial(); });
+  peer.on('disconnected', () => { if (G.peer === peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) {} } });
+  peer.on('error', e => {
+    if (G.peer !== peer) return;
+    if (e.type === 'peer-unavailable') { banner('会場が見つかりません。幹事が会場を開くまでお待ちください（自動で再接続します）'); scheduleRedial(false); }
+    else if (['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected', 'webrtc'].includes(e.type)) { banner('接続が不安定です。再接続しています…'); scheduleRedial(true); }
+  });
+}
+function dial() {
+  if (G.conn) { try { G.conn.close(); } catch (e) {} }
+  const conn = G.peer.connect(PREFIX + ROOM, { reliable: true }); G.conn = conn;
+  conn.on('open', () => { if (G.conn !== conn) return; G.retry = 0; conn.send({ t: 'join', pid: G.pid, name: G.name }); if (G.pending) conn.send(G.pending); });
+  conn.on('data', d => { if (G.conn === conn) onHostMsg(d); });
+  conn.on('close', () => { if (G.conn === conn) { banner('接続が切れました。再接続しています…'); scheduleRedial(false); } });
+  conn.on('error', () => {});
+}
+function scheduleRedial(full, delay) {
+  clearTimeout(G.rt);
+  G.rt = setTimeout(() => {
+    if (full || !G.peer || G.peer.destroyed) { try { G.peer && G.peer.destroy(); } catch (e) {} G.peer = null; connectGuest(); }
+    else if (G.peer.disconnected) { try { G.peer.reconnect(); } catch (e) {} setTimeout(() => { if (G.peer && G.peer.open) dial(); }, 1200); }
+    else dial();
+  }, delay ?? Math.min(8000, 1500 * (++G.retry)));
+}
+function onHostMsg(d) {
+  if (!d || d.t !== 'state') return;
+  const prev = G.st; G.st = d;
+  if (d.phase === 'q') { G.deadline = performance.now() + (d.remain || 0); if (!prev || prev.qi !== d.qi || prev.phase !== 'q') navigator.vibrate?.(60); }
+  if ((d.my && d.my.c != null) || (G.pending && (d.phase !== 'q' || d.qi !== G.pending.qi))) G.pending = null;
+  renderGuest();
+}
+function renderGuest() {
+  const s = G.st; if (!s) return;
+  const me = s.me || {}, mode = s.mode;
+  let body = '';
+  if (s.phase === 'lobby') {
+    body = `<div class="gcenter"><div class="big">✅ 参加しました</div><div class="nm">${esc(G.name)} さん</div>
+      <p>クイズが始まるまで、この画面のままお待ちください</p><p>現在 ${s.n}人 が参加中</p>
+      <button class="link" data-act="rename">名前を変更する</button></div>`;
+  } else if (s.phase === 'q') {
+    const myc = s.my.c != null ? s.my.c : (G.pending ? G.pending.c : null);
+    if (me.alive === false) body = `<div class="gq">${esc(s.q.text)}</div><div class="gcenter"><div class="big">💀 脱落しました</div><p>このあとは観戦をお楽しみください</p></div>`;
+    else if (myc != null) body = `<div class="gq">${esc(s.q.text)}</div><div class="gcenter"><div class="sent" style="--c:${COLORS[myc]}">${myc + 1}</div>
+      <div class="big">${s.my.c != null ? '回答を受け付けました' : '送信中…'}</div><p>${esc(s.q.choices[myc])}</p><p>結果発表まで、この画面のままお待ちください</p></div>`;
+    else body = `<div class="gq">${esc(s.q.text)}</div><div class="gcd" id="gcdw">残り <span id="gcd">–</span> 秒</div>
+      <div class="gbtns">${s.q.choices.map((c, i) => `<button class="gbtn" style="--c:${COLORS[i]}" data-act="ans" data-ci="${i}"><span class="mk">${i + 1}</span><span>${esc(c)}</span></button>`).join('')}</div>`;
+  } else if (s.phase === 'closed' || s.phase === 'votes') {
+    body = `<div class="gq">${esc(s.q.text)}</div><div class="gcenter"><div class="big">⏰ 締め切り</div>
+      ${s.my.c != null ? `<div class="sent" style="--c:${COLORS[s.my.c]}">${s.my.c + 1}</div><p>あなたの回答：${esc(s.q.choices[s.my.c])}</p>` : '<p>未回答でした</p>'}
+      <p>スクリーンに注目！</p></div>`;
+  } else if (s.phase === 'answer' || s.phase === 'qrank') {
+    const ok = s.my.ok;
+    body = `<div class="gq">${esc(s.q.text)}</div><div class="gcenter">
+      <div class="res ${ok ? 'ok' : 'ng'}">${ok ? '⭕' : '❌'}</div><div class="big">${ok ? '正解！' : (s.my.c == null ? '未回答' : '残念…')}</div>
+      <p>正解：${s.correct >= 0 ? (s.correct + 1) + '. ' + esc(s.q.choices[s.correct]) : '—'}</p>
+      ${mode === 'survival' ? `<p style="font-size:18px;color:var(--text)">${me.alive ? '🔥 生き残り中！' : '💀 脱落'}</p>` : ''}
+      ${me.rank ? `<p style="font-size:18px;color:var(--text)">現在 <b style="color:var(--gold);font-size:26px">${me.rank}位</b> / ${s.n}人</p><p>${esc(me.label)}</p>` : ''}
+    </div>`;
+  } else if (s.phase === 'final') {
+    const f = s.final;
+    body = f && f.revealed
+      ? `<div class="gcenter"><div class="big">最終結果</div><div class="myrank">${f.rank === 1 ? '👑 優勝！' : f.rank + '位'}</div><p>${s.n}人中</p><p>${esc(me.label || '')}</p><p>ご参加ありがとうございました！</p></div>`
+      : `<div class="gcenter"><div class="big">🥁 結果発表中…</div><p>スクリーンに注目！</p></div>`;
+  }
+  app.innerHTML = `<div class="guest">
+    <div class="ghead"><b>${esc(s.title)}</b>${s.qi >= 0 && s.phase !== 'final' ? `<span>第${s.qi + 1}問 / ${s.total}</span>` : ''}</div>
+    <div id="gbanner" class="gbanner" hidden></div>${body}
+    <div class="gfoot">${esc(G.name)}</div></div>`;
+  clearInterval(G.cdT);
+  if (s.phase === 'q' && document.getElementById('gcd')) {
+    const upd = () => { const r = Math.max(0, Math.ceil((G.deadline - performance.now()) / 1000)); const el = document.getElementById('gcd'); if (!el) return clearInterval(G.cdT); el.textContent = r; document.getElementById('gcdw').classList.toggle('urgent', r <= 5); };
+    upd(); G.cdT = setInterval(upd, 200);
+  }
+}
+function guestAct(act, el) {
+  if (act === 'ans') {
+    const s = G.st; if (!s || s.phase !== 'q' || s.my.c != null || G.pending) return;
+    const msg = { t: 'answer', qi: s.qi, c: +el.dataset.ci };
+    G.pending = msg; navigator.vibrate?.(30);
+    if (G.conn && G.conn.open) { try { G.conn.send(msg); } catch (e) {} }
+    renderGuest();
+  } else if (act === 'rename') renderJoin();
+}
+
+// ================= 起動 =================
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act;
+  if (ROOM) guestAct(act, el); else if (H.view === 'game') gameAct(act, el); else editorAct(act, el);
+});
+if (ROOM) guestInit(); else hostInit();
+</script>
+</body>
+</html>
