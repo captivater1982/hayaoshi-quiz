@@ -145,6 +145,8 @@ details summary{cursor:pointer;font-weight:700;margin:6px 0}
 .revealed{display:flex;flex-wrap:wrap;gap:1vw;justify-content:center}
 .revealed .rv{background:rgba(255,255,255,.07);border-radius:12px;padding:.8vh 1.4vw;font-size:clamp(14px,1.6vw,28px);font-weight:800}
 .revealed .rv b{color:var(--gold);margin-right:.5em}
+.drum{font-size:clamp(80px,14vw,240px);animation:shake .12s infinite alternate}
+@keyframes shake{from{transform:rotate(-8deg) scale(1)}to{transform:rotate(8deg) scale(1.06)}}
 .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:5}
 .confetti i{position:absolute;top:-20px;width:10px;height:16px;animation:fall linear infinite}
 
@@ -229,24 +231,122 @@ if (typeof Peer === 'undefined') {
 }
 
 // ================= 効果音（幹事画面のみ） =================
-let actx = null;
-function beep(freq, dur, type = 'sine', vol = .15, delay = 0) {
-  if (!H.sound) return;
+// すべてブラウザ内で合成（音声ファイル不要）
+const AU = { ctx: null, master: null, noiseBuf: null, bgmT: null, nextT: 0, step: 0, bpm: 128, urgent: false };
+const mid = m => 440 * Math.pow(2, (m - 69) / 12);
+function ac() {
+  if (!H.sound) return null;
   try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    const t0 = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
-    o.type = type; o.frequency.value = freq;
-    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
-    o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + dur + .02);
-  } catch (e) {}
+    if (!AU.ctx) {
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
+      const c = AU.ctx = new C();
+      const comp = c.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
+      AU.master = c.createGain(); AU.master.gain.value = .9; AU.master.connect(comp); comp.connect(c.destination);
+      AU.noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate);
+      const d = AU.noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (AU.ctx.state === 'suspended') AU.ctx.resume();
+    return AU.ctx;
+  } catch (e) { return null; }
+}
+function tone(f, t, dur, o = {}) {
+  const c = AU.ctx, osc = c.createOscillator(), g = c.createGain();
+  osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(f, t);
+  if (o.slide) osc.frequency.exponentialRampToValueAtTime(o.slide, t + dur);
+  if (o.detune) osc.detune.value = o.detune;
+  const v = o.vol ?? .2, a = o.a ?? .005;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + a);
+  if (o.hold) g.gain.setValueAtTime(v, t + o.hold);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  let node = osc;
+  if (o.lp) { const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = o.lp; osc.connect(fl); node = fl; }
+  node.connect(g); g.connect(AU.master); osc.start(t); osc.stop(t + dur + .05);
+}
+function noise(t, dur, o = {}) {
+  const c = AU.ctx, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = AU.noiseBuf; s.loop = true;
+  fl.type = o.ft || 'highpass'; fl.frequency.value = o.f || 5000; if (o.q) fl.Q.value = o.q;
+  const v = o.vol ?? .2;
+  if (o.a) { g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + o.a); } else g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(AU.master); s.start(t, Math.random() * .5); s.stop(t + dur + .05);
+}
+const kick = (t, v = .9) => tone(150, t, .35, { slide: 40, vol: v });
+const snare = (t, v = .35) => { noise(t, .16, { ft: 'bandpass', f: 1900, q: .7, vol: v }); tone(200, t, .08, { type: 'triangle', vol: v * .5 }); };
+const hat = (t, v = .08, len = .04) => noise(t, len, { f: 8000, vol: v });
+const crash = (t, v = .3) => noise(t, 2.2, { f: 3500, vol: v });
+const brass = (f, t, dur, v = .07) => [-9, 0, 9].forEach(d => tone(f, t, dur, { type: 'sawtooth', detune: d, vol: v, a: .02, hold: dur * .6, lp: 2800 }));
+const chord = (ms, t, dur, v) => ms.forEach(m => brass(mid(m), t, dur, v));
+function roll(t, dur) { let x = t, gap = .07; while (x < t + dur) { snare(x, .08 + .3 * (x - t) / dur); x += gap; gap = Math.max(.03, gap * .96); } }
+function applause(t, dur, v = 1) {
+  for (let i = 0; i < dur * 70; i++) { const x = t + Math.random() * dur, fade = 1 - (x - t) / dur * .7; noise(x, .02 + Math.random() * .05, { ft: 'bandpass', f: 1200 + Math.random() * 3000, q: 1.2, vol: (.04 + Math.random() * .07) * fade * v }); }
+}
+function bgmStart() {
+  if (!ac()) return; bgmStop();
+  AU.step = 0; AU.bpm = 128; AU.urgent = false; AU.nextT = AU.ctx.currentTime + .35;
+  AU.bgmT = setInterval(bgmTick, 25);
+}
+function bgmStop() { clearInterval(AU.bgmT); AU.bgmT = null; }
+function bgmTick() {
+  const c = AU.ctx; if (!c || !H.sound) return bgmStop();
+  if (AU.nextT < c.currentTime) AU.nextT = c.currentTime + .02; // タブ復帰時にまとめて鳴らさない
+  while (AU.nextT < c.currentTime + .12) {
+    const s = AU.step % 16, t = AU.nextT, bar = Math.floor(AU.step / 16) % 4;
+    if (s % 4 === 0) kick(t, .55);
+    if (s % 4 === 2) hat(t, .09, .07);
+    if (AU.urgent) { if (s % 2 === 1) hat(t, .05); if (s % 4 === 2) snare(t, .12); }
+    if (s % 2 === 0) { const root = [45, 45, 41, 43][bar]; const pat = [0, 0, 12, 0, 0, 12, 7, 12]; tone(mid(root + pat[s / 2]), t, .16, { type: 'sawtooth', vol: .08, lp: 650 }); }
+    if (s === 0 || s === 6 || s === 12) tone(mid([69, 69, 65, 67][bar] + 12), t, .09, { type: 'square', vol: .025 });
+    AU.nextT += 60 / AU.bpm / 4; AU.step++;
+  }
 }
 const SFX = {
-  start() { beep(660, .12, 'triangle'); beep(990, .2, 'triangle', .15, .12); },
-  tick() { beep(1200, .05, 'square', .05); },
-  end() { beep(330, .18, 'sawtooth', .12); beep(220, .4, 'sawtooth', .12, .18); },
-  votes() { for (let i = 0; i < 8; i++) beep(300 + i * 60, .06, 'square', .05, i * .05); },
-  reveal() { [523, 659, 784, 1047].forEach((f, i) => beep(f, .25, 'triangle', .16, i * .09)); },
-  fanfare() { [523, 523, 523, 698, 880, 784, 1047].forEach((f, i) => beep(f, .3, 'triangle', .16, i * .13)); },
+  join() { const c = ac(); if (!c) return; const t = c.currentTime; tone(500, t, .12, { slide: 1200, type: 'triangle', vol: .15 }); },
+  start() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    kick(t); chord([60, 64, 67], t, .16, .06); kick(t + .18); chord([62, 66, 69], t + .18, .16, .06);
+    kick(t + .36); crash(t + .36, .25); chord([64, 68, 71, 76], t + .36, .5, .07);
+    bgmStart();
+  },
+  hurry() { AU.urgent = true; AU.bpm = 168; },
+  tick(s) { const c = ac(); if (!c) return; tone(s <= 3 ? 1760 : 1320, c.currentTime, .09, { type: 'square', vol: .06 }); },
+  end() {
+    bgmStop(); const c = ac(); if (!c) return; const t = c.currentTime;
+    tone(110, t, .8, { type: 'sawtooth', vol: .16, hold: .6, lp: 1400 }); tone(116, t, .8, { type: 'square', vol: .1, hold: .6, lp: 1400 }); kick(t, 1);
+  },
+  votes() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    roll(t, .9); crash(t + .9, .22); kick(t + .9); chord([57, 60, 64], t + .9, .35, .06);
+  },
+  correct() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    [1319, 1047, 1319, 1047].forEach((f, i) => tone(f, t + i * .16, .5, { type: 'triangle', vol: .2 }));
+    const u = t + .68; kick(u); crash(u, .3); chord([60, 64, 67, 72], u, .9, .07); chord([72, 76, 79], u + .02, .9, .04);
+    applause(u, 2.5, .8);
+  },
+  jingle() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    [72, 76, 79, 84].forEach((m, i) => { tone(mid(m), t + i * .09, .25, { type: 'triangle', vol: .14 }); hat(t + i * .09, .06); });
+    kick(t + .36); chord([72, 76, 79], t + .36, .5, .05);
+  },
+  finalIntro() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    roll(t, 1.4); kick(t + 1.4); crash(t + 1.4, .3); chord([55, 59, 62, 67], t + 1.4, 1.2, .07);
+  },
+  roll(dur) { const c = ac(); if (!c) return; roll(c.currentTime, dur); },
+  hit() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    kick(t); crash(t, .3); chord([60, 64, 67, 72], t, .8, .07); applause(t + .1, 2, .7);
+  },
+  winner() {
+    const c = ac(); if (!c) return; const t = c.currentTime;
+    kick(t); crash(t, .35);
+    const mel = [[67, 0, .14], [67, .16, .14], [67, .32, .14], [72, .48, .7], [76, 1.2, .2], [74, 1.42, .2], [76, 1.64, .2], [79, 1.86, 1.2]];
+    mel.forEach(([m, d, l]) => { brass(mid(m), t + d, l + .1, .08); brass(mid(m - 12), t + d, l + .1, .04); });
+    [0, .48, 1.2, 1.86].forEach(d => kick(t + d)); crash(t + 1.86, .3);
+    chord([60, 64, 67], t + 1.86, 1.6, .05);
+    applause(t + .2, 5, 1.2);
+  },
 };
 
 // ================= 幹事（ホスト） =================
@@ -259,7 +359,22 @@ const SAMPLE = {
     { text: '（当日決める）今日いちばんオシャレだと思うテーブルは？', choices: ['Aテーブル', 'Bテーブル', 'Cテーブル', 'Dテーブル'], correct: -1, time: 20, image: '' },
   ],
 };
-const H = { quiz: null, game: null, peer: null, conns: new Map(), view: 'edit', timer: null, sound: true, botTimers: [], net: 'connecting', saveT: null, autoCloseT: null };
+const BONENKAI = {
+  title: '2026 忘年会 早押しクイズ大会', mode: 'split', revealFrom: 5,
+  questions: [
+    { text: '「とりあえず生！」ビールの泡、いちばんおいしいとされる「ビール：泡」の比率は？', choices: ['9：1', '7：3', '5：5', '泡だけでいい'], correct: 1, time: 20, image: '' },
+    { text: '12月を「師走」と呼ぶ由来として、よく言われるのはどれ？', choices: ['師（お坊さん）も走るほど忙しいから', '先生が走って逃げ出すから', '幹事が走って店を予約するから', '12月は足が速くなるから'], correct: 0, time: 20, image: '' },
+    { text: '【社長に聞きました】社長が「今年いちばん嬉しかった」ことは？', choices: ['大型案件の受注', '新しい仲間が増えたこと', '健康診断がオールA', '推しのライブが当選'], correct: 3, time: 20, image: '' },
+    { text: '2025年の「今年の漢字」は？', choices: ['熊', '米', '金', '税'], correct: 0, time: 15, image: '' },
+    { text: '【写真クイズ】この子ども時代の写真、いったい誰？', choices: ['社長', '部長', '課長', '今年の新人'], correct: 0, time: 20, image: '' },
+    { text: '【その場で実演】課長がスマホで「今年も大変お世話になりました」と打つのにかかる時間は？', choices: ['10秒以内', '10〜20秒', '20〜30秒', '30秒以上（または断念）'], correct: -1, time: 30, image: '' },
+    { text: '【みんなの本音】来年の社員旅行、いちばん人気になるのは？（多数派を当てたら正解！）', choices: ['温泉でのんびり', '海外へ弾丸ツアー', 'テーマパーク', '旅行より休みをくれ'], correct: -1, time: 20, image: '' },
+    { text: '年末に日本中で演奏される、ベートーヴェンの交響曲は第何番？', choices: ['第5番「運命」', '第9番', '第10番', '第108番（除夜の鐘）'], correct: 1, time: 15, image: '' },
+    { text: '【利きビール対決】部長は、3つのビールの中から「いちばん高いビール」を当てられる？', choices: ['一発で当てる', '2回目で当てる', '最後まで外す', '「全部おいしい」と言い出す'], correct: -1, time: 30, image: '' },
+    { text: '【フィナーレ】社長が選ぶ「今年のMVP部署」はどこ？', choices: ['営業部', '開発部', '総務部', 'まさかの「全員！」'], correct: -1, time: 25, image: '' },
+  ],
+};
+const H = { rolling: false, quiz: null, game: null, peer: null, conns: new Map(), view: 'edit', timer: null, sound: true, botTimers: [], net: 'connecting', saveT: null, autoCloseT: null };
 
 function normQuiz(r) {
   r = r || {};
@@ -319,7 +434,8 @@ function renderEditor() {
       <div class="row">
         <button class="btn sm" data-act="export">⬇ JSONで書き出し</button>
         <label class="btn sm">⬆ JSONファイルを読み込み<input type="file" accept=".json,application/json" hidden data-k="impfile"></label>
-        <button class="btn sm" data-act="sample">サンプルに戻す</button>
+        <button class="btn sm" data-act="bonenkai">🍻 忘年会テンプレート（10問）</button>
+        <button class="btn sm" data-act="sample">結婚式サンプルに戻す</button>
       </div>
       <details style="margin-top:12px"><summary>🤖 AI（Claude など）に問題を作ってもらう</summary>
         <p class="muted" style="font-size:14px">下の文章をコピーして、〇〇の部分を書き換えてAIに送ってください。返ってきたJSONを下の欄に貼り付けて「貼り付けたJSONを読み込む」を押すと問題が入ります。</p>
@@ -425,7 +541,8 @@ function editorAct(act, el) {
     case 'addC': if (qs[i].choices.length < 6) qs[i].choices.push(''); break;
     case 'delC': { const ci = +el.dataset.ci, qq = qs[i]; qq.choices.splice(ci, 1); if (qq.correct === ci) qq.correct = 0; else if (qq.correct > ci) qq.correct--; break; }
     case 'clearImg': qs[i].image = ''; break;
-    case 'sample': if (!confirm('今の問題を消して、サンプルに戻しますか？')) return; H.quiz = normQuiz(SAMPLE); break;
+    case 'sample': if (!confirm('今の問題を消して、結婚式サンプルに戻しますか？')) return; H.quiz = normQuiz(SAMPLE); break;
+    case 'bonenkai': if (!confirm('今の問題を消して、忘年会テンプレート（10問）を読み込みますか？')) return; H.quiz = normQuiz(BONENKAI); saveQuiz(); renderEditor(); scrollTo(0, 0); toast('忘年会テンプレートを読み込みました'); return;
     case 'export': {
       const blob = new Blob([JSON.stringify(q, null, 2)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (q.title || 'quiz').replace(/[\\/:*?"<>|]/g, '_') + '.json'; a.click();
@@ -461,7 +578,7 @@ function resumeGame() {
 }
 function exitGame() {
   if (!confirm('ゲームを終了して編集画面に戻りますか？\n（進行状況は消えます）')) return;
-  clearInterval(H.timer); H.botTimers.forEach(clearTimeout); H.botTimers = [];
+  clearInterval(H.timer); H.botTimers.forEach(clearTimeout); H.botTimers = []; bgmStop(); H.rolling = false;
   try { H.peer && H.peer.destroy(); } catch (e) {}
   H.peer = null; H.conns.clear(); H.game = null; LS.del('mhq-game');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -516,7 +633,7 @@ function onGuestMsg(conn, d) {
     const old = H.conns.get(pid); if (old && old !== conn) { try { old.close(); } catch (e) {} }
     H.conns.set(pid, conn);
     sendState(pid); saveGameSoon();
-    if (g.phase === 'lobby') renderLobbyChips(isNew ? pid : null); else refreshCounts();
+    if (g.phase === 'lobby') { renderLobbyChips(); if (isNew) SFX.join(); } else refreshCounts();
   } else if (d.t === 'answer') {
     const pid = conn.pid, p = g.players[pid];
     if (!p || g.phase !== 'q' || d.qi !== g.qi || p.answers[g.qi] || !isAlive(p)) { if (p) sendState(pid); return; }
@@ -598,7 +715,7 @@ function startTick() {
     const el = document.getElementById('cd');
     if (el) { el.textContent = s; el.parentElement.classList.toggle('urgent', s <= 5); }
     const b = document.getElementById('cdbar'); if (b) b.style.width = Math.max(0, rem / (curQ().time * 1000) * 100) + '%';
-    if (s !== last) { if (s <= 5 && s > 0) SFX.tick(); last = s; }
+    if (s !== last) { if (s <= 5 && s > 0) { if (!AU.urgent) SFX.hurry(); SFX.tick(s); } last = s; }
     if (rem <= 0) { closeQuestion(); renderHost(); broadcast(); saveGame(); }
   }, 100);
 }
@@ -619,13 +736,24 @@ function next() {
     case 'closed': g.phase = 'votes'; SFX.votes(); break;
     case 'votes':
       if (!(g.correct[g.qi] >= 0)) { toast('正解の選択肢をクリックして決めてください'); return; }
-      g.phase = 'answer'; if (!g.revealed.includes(g.qi)) g.revealed.push(g.qi); SFX.reveal(); break;
-    case 'answer': g.phase = 'qrank'; break;
+      g.phase = 'answer'; if (!g.revealed.includes(g.qi)) g.revealed.push(g.qi); SFX.correct(); break;
+    case 'answer': g.phase = 'qrank'; SFX.jingle(); break;
     case 'qrank':
       if (g.qi + 1 < qs.length) openQuestion(g.qi + 1);
-      else { g.phase = 'final'; g.finalPos = Math.min(g.quiz.revealFrom, Object.keys(g.players).length) + 1; SFX.votes(); }
+      else { g.phase = 'final'; g.finalPos = Math.min(g.quiz.revealFrom, Object.keys(g.players).length) + 1; SFX.finalIntro(); }
       break;
-    case 'final': if (g.finalPos > 1) { g.finalPos--; g.finalPos === 1 ? SFX.fanfare() : SFX.reveal(); } else return; break;
+    case 'final': {
+      // ドラムロールで溜めてから発表
+      if (g.finalPos <= 1 || H.rolling) return;
+      const isWin = g.finalPos - 1 === 1, dur = isWin ? 2.8 : 1.7;
+      H.rolling = true; renderHost(); SFX.roll(dur);
+      setTimeout(() => {
+        H.rolling = false; if (!H.game || H.game !== g) return;
+        g.finalPos--; isWin ? SFX.winner() : SFX.hit();
+        renderHost(); broadcast(); saveGame();
+      }, dur * 1000);
+      return;
+    }
   }
   renderHost(); broadcast(); saveGame();
 }
@@ -693,7 +821,7 @@ function renderHost() {
       <button class="btn sm" data-act="snd">${H.sound ? '🔊 音あり' : '🔇 音なし'}</button>
       ${g.phase !== 'lobby' ? `<button class="btn sm" data-act="qr">QRを表示</button>` : ''}
       <span class="hint">スペースキーでも進めます</span>
-      <button class="next" data-act="next" ${done ? 'disabled' : ''}>${nextLabel()} ▶</button>
+      <button class="next" data-act="next" ${done || H.rolling ? 'disabled' : ''}>${nextLabel()} ▶</button>
     </div>
   </div>${done ? confettiHTML() : ''}`;
   setNet(H.net);
@@ -767,6 +895,11 @@ function viewFinal() {
   const g = H.game, st = standings();
   if (!st.length) return `<div class="final"><div class="bigmsg">参加者がいませんでした</div></div>`;
   const R = Math.min(g.quiz.revealFrom, st.length), fp = g.finalPos;
+  if (H.rolling) {
+    const nx = fp - 1, above = st.slice(nx, R);
+    return `<div class="final"><div class="drum">🥁</div><div class="bigmsg">${nx === 1 ? '優勝は……' : nx + '位は……'}</div>
+      ${above.length ? `<div class="revealed">${above.map(r => `<span class="rv"><b>${r.rank}位</b>${esc(r.name)}</span>`).join('')}</div>` : ''}</div>`;
+  }
   if (fp > R) {
     const lower = st.slice(R);
     return `<div class="final"><h2 class="ft">🎊 最終結果発表 🎊</h2>
@@ -796,7 +929,7 @@ function gameAct(act, el) {
     case 'next': next(); break;
     case 'exit': exitGame(); break;
     case 'fs': toggleFS(); break;
-    case 'snd': H.sound = !H.sound; renderHost(); break;
+    case 'snd': H.sound = !H.sound; if (!H.sound) bgmStop(); else if (H.game.phase === 'q') bgmStart(); renderHost(); break;
     case 'qr': showQRModal(); break;
     case 'copyUrl': copyText(joinURL()); break;
     case 'bots': addBots(5); break;
