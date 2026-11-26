@@ -113,9 +113,11 @@ details summary{cursor:pointer;font-weight:700;margin:6px 0}
 .tile.correct{background:linear-gradient(135deg,#fff0a8,#ffc400 55%,#ff9d00);color:#2a1c00;transform:scale(1.03);animation:glow .9s infinite alternate}
 .tile.correct .tx{text-shadow:none}
 .tile.correct .votes{background:rgba(0,0,0,.6);color:#fff}
-.pickable{cursor:pointer;outline:3px dashed rgba(255,255,255,.6);outline-offset:-6px}
-.picked{outline:6px solid #fff;outline-offset:-8px}
-.pickhint{background:#3b2a00;border:1px solid var(--gold);color:var(--gold);border-radius:12px;padding:1vh 1.5vw;font-weight:800;font-size:clamp(14px,1.6vw,26px)}
+.pick{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted);opacity:.45;transition:opacity .2s}
+.pick:hover,.pick.need{opacity:1}
+.pick.need{animation:pulse .4s 4 alternate}
+.pk{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:transparent;font-size:13px;padding:0}
+.pk.on{background:rgba(255,255,255,.22);border-color:var(--muted)}
 .anscount{text-align:right;color:var(--muted);font-size:clamp(14px,1.6vw,28px)}
 .anscount b{color:var(--text);font-size:1.3em}
 
@@ -279,6 +281,32 @@ const hat = (t, v = .08, len = .04) => noise(t, len, { f: 8000, vol: v });
 const crash = (t, v = .3) => noise(t, 2.2, { f: 3500, vol: v });
 const brass = (f, t, dur, v = .07) => [-9, 0, 9].forEach(d => tone(f, t, dur, { type: 'sawtooth', detune: d, vol: v, a: .02, hold: dur * .6, lp: 2800 }));
 const chord = (ms, t, dur, v) => ms.forEach(m => brass(mid(m), t, dur, v));
+// 審判の笛：高い音を細かく震わせ、息の音を重ねる
+function whistle(t, dur) {
+  const c = AU.ctx, osc = c.createOscillator(), lfo = c.createOscillator(), depth = c.createGain(), g = c.createGain();
+  osc.type = 'sine'; osc.frequency.value = 2900;
+  lfo.type = 'square'; lfo.frequency.value = 28; depth.gain.value = 140;
+  lfo.connect(depth); depth.connect(osc.frequency);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.22, t + .015); g.gain.setValueAtTime(.22, t + dur - .04); g.gain.linearRampToValueAtTime(0, t + dur);
+  osc.connect(g); g.connect(AU.master);
+  osc.start(t); lfo.start(t); osc.stop(t + dur + .02); lfo.stop(t + dur + .02);
+  noise(t, dur, { ft: 'bandpass', f: 2900, q: 3, vol: .05 });
+}
+// ラッパ：のこぎり波を重ね、立ち上がりで音程を少しずり上げる
+function trumpet(f, t, dur, vib, v = 1) {
+  const c = AU.ctx;
+  [-6, 0, 6].forEach(d => {
+    const osc = c.createOscillator(), fl = c.createBiquadFilter(), g = c.createGain();
+    osc.type = 'sawtooth'; osc.detune.value = d;
+    osc.frequency.setValueAtTime(f * .94, t); osc.frequency.exponentialRampToValueAtTime(f, t + .04);
+    if (vib) { const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = 5.5; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * .012, t + dur * .6); l.connect(lg); lg.connect(osc.frequency); l.start(t); l.stop(t + dur + .05); }
+    fl.type = 'lowpass'; fl.Q.value = 2;
+    fl.frequency.setValueAtTime(900, t); fl.frequency.exponentialRampToValueAtTime(4200, t + .05); fl.frequency.exponentialRampToValueAtTime(2400, t + dur);
+    const vol = .075 * v;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .025); g.gain.setValueAtTime(vol * .85, t + Math.max(.03, dur - .08)); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    osc.connect(fl); fl.connect(g); g.connect(AU.master); osc.start(t); osc.stop(t + dur + .05);
+  });
+}
 function roll(t, dur) { let x = t, gap = .07; while (x < t + dur) { snare(x, .08 + .3 * (x - t) / dur); x += gap; gap = Math.max(.03, gap * .96); } }
 function applause(t, dur, v = 1) {
   for (let i = 0; i < dur * 70; i++) { const x = t + Math.random() * dur, fade = 1 - (x - t) / dur * .7; noise(x, .02 + Math.random() * .05, { ft: 'bandpass', f: 1200 + Math.random() * 3000, q: 1.2, vol: (.04 + Math.random() * .07) * fade * v }); }
@@ -313,12 +341,16 @@ const SFX = {
   hurry() { AU.urgent = true; AU.bpm = 168; },
   tick(s) { const c = ac(); if (!c) return; tone(s <= 3 ? 1760 : 1320, c.currentTime, .09, { type: 'square', vol: .06 }); },
   end() {
+    // ホイッスル「ピッ、ピーーッ」
     bgmStop(); const c = ac(); if (!c) return; const t = c.currentTime;
-    tone(110, t, .8, { type: 'sawtooth', vol: .16, hold: .6, lp: 1400 }); tone(116, t, .8, { type: 'square', vol: .1, hold: .6, lp: 1400 }); kick(t, 1);
+    whistle(t, .14); whistle(t + .22, 1.0);
   },
   votes() {
+    // ラッパ「パパーン！」
     const c = ac(); if (!c) return; const t = c.currentTime;
-    roll(t, .9); crash(t + .9, .22); kick(t + .9); chord([57, 60, 64], t + .9, .35, .06);
+    trumpet(mid(67), t, .11); trumpet(mid(67), t + .14, .11);
+    trumpet(mid(72), t + .28, .9, true); trumpet(mid(76), t + .28, .9, true, .6); trumpet(mid(64), t + .28, .9, true, .5);
+    kick(t + .28); crash(t + .28, .18);
   },
   correct() {
     const c = ac(); if (!c) return; const t = c.currentTime;
@@ -402,6 +434,7 @@ function hostInit() {
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); next(); }
     if (e.key === 'f') toggleFS();
+    if (/^[1-6]$/.test(e.key)) setPick(+e.key - 1);
   });
   window.addEventListener('beforeunload', e => { if (H.view === 'game') { e.preventDefault(); e.returnValue = ''; } });
 }
@@ -737,7 +770,7 @@ function next() {
     case 'q': closeQuestion(); break;
     case 'closed': g.phase = 'votes'; SFX.votes(); break;
     case 'votes':
-      if (!(g.correct[g.qi] >= 0)) { toast('正解の選択肢をクリックして決めてください'); return; }
+      if (!(g.correct[g.qi] >= 0)) { const p = document.querySelector('.pick'); if (p) { p.classList.remove('need'); void p.offsetWidth; p.classList.add('need'); } return; }
       g.phase = 'answer'; if (!g.revealed.includes(g.qi)) g.revealed.push(g.qi); SFX.correct(); break;
     case 'answer': g.phase = 'qrank'; SFX.jingle(); break;
     case 'qrank':
@@ -822,12 +855,27 @@ function renderHost() {
       <button class="btn sm" data-act="fs">⛶ 全画面</button>
       <button class="btn sm" data-act="snd">${H.sound ? '🔊 音あり' : '🔇 音なし'}</button>
       ${g.phase !== 'lobby' ? `<button class="btn sm" data-act="qr">QRを表示</button>` : ''}
+      ${pickUI()}
       <span class="hint">スペースキーでも進めます</span>
       <button class="next" data-act="next" ${done || H.rolling ? 'disabled' : ''}>${nextLabel()} ▶</button>
     </div>
   </div>${done ? confettiHTML() : ''}`;
   setNet(H.net);
   if (g.phase === 'lobby') { drawQR(document.getElementById('qr'), Math.min(innerHeight * .46, innerWidth * .32)); renderLobbyChips(); }
+}
+// 「当日決める」問題の正解は、画面下の小さな数字ボタン（またはキーボードの数字）で、会場に気づかれないように選ぶ
+const canPick = () => { const g = H.game, q = curQ(); return q && q.correct === -1 && (g.phase === 'closed' || g.phase === 'votes'); };
+function pickUI() {
+  if (!canPick()) return '';
+  const cor = H.game.correct[H.game.qi];
+  return `<span class="pick" title="正解の番号（キーボードの数字でも選べます）">正解${curQ().choices.map((c, i) => `<button class="pk ${cor === i ? 'on' : ''}" data-act="pick" data-ci="${i}">${i + 1}</button>`).join('')}</span>`;
+}
+function setPick(ci) {
+  if (!canPick() || ci < 0 || ci >= curQ().choices.length) return;
+  H.game.correct[H.game.qi] = ci;
+  document.querySelectorAll('.pk').forEach((b, i) => b.classList.toggle('on', i === ci));
+  document.querySelector('.pick')?.classList.remove('need');
+  saveGame();
 }
 function drawQR(el, size) {
   if (!el || typeof QRCode === 'undefined') return;
@@ -855,7 +903,7 @@ function viewLobby() {
 function viewQuestion() {
   const g = H.game, q = curQ(), ph = g.phase, cor = g.correct[g.qi];
   const counts = voteCounts(), tot = counts.reduce((a, b) => a + b, 0), mx = Math.max(1, ...counts);
-  const showVotes = ph === 'votes' || ph === 'answer', showAns = ph === 'answer', pick = ph === 'votes' && q.correct === -1;
+  const showVotes = ph === 'votes' || ph === 'answer', showAns = ph === 'answer';
   const remain = Math.max(0, g.deadline - Date.now()), img = safeImg(q.image);
   return `<div class="qwrap">
     <div class="qhead">
@@ -864,11 +912,10 @@ function viewQuestion() {
       ${ph === 'closed' ? `<div class="stamp">締め切り！</div>` : ''}
     </div>
     ${ph === 'q' ? `<div class="bar"><i id="cdbar" style="width:${remain / (q.time * 1000) * 100}%"></i></div>` : ''}
-    ${pick ? `<div class="pickhint">👆 会場の反応を見て、正解の選択肢をクリックしてください${cor >= 0 ? `（選択中：${cor + 1}）` : ''}</div>` : ''}
     <div class="qbody">
       ${img ? `<img class="qimg" src="${esc(img)}" alt="">` : ''}
       <div class="tiles n${q.choices.length}">
-        ${q.choices.map((c, i) => `<div class="tile ${showAns ? (i === cor ? 'correct' : 'dim') : ''} ${pick ? 'pickable' : ''} ${pick && cor === i ? 'picked' : ''}" style="--c:${COLORS[i]};${showVotes || ph !== 'q' ? 'animation:none' : ''}" ${pick ? `data-act="pick" data-ci="${i}"` : ''}>
+        ${q.choices.map((c, i) => `<div class="tile ${showAns ? (i === cor ? 'correct' : 'dim') : ''}" style="--c:${COLORS[i]};${showVotes || ph !== 'q' ? 'animation:none' : ''}">
           <span class="mk">${i + 1}</span><span class="tx">${esc(c)}</span>
           ${showVotes ? `<span class="votes"><b>${counts[i]}</b>票</span><i class="vbar" style="width:${counts[i] / mx * 100}%"></i>` : ''}
         </div>`).join('')}
@@ -935,7 +982,7 @@ function gameAct(act, el) {
     case 'qr': showQRModal(); break;
     case 'copyUrl': copyText(joinURL()); break;
     case 'bots': addBots(5); break;
-    case 'pick': H.game.correct[H.game.qi] = +el.dataset.ci; renderHost(); saveGame(); break;
+    case 'pick': setPick(+el.dataset.ci); break;
   }
 }
 
